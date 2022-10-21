@@ -22,7 +22,6 @@ from ldm.modules.attention import SpatialTransformer
 
 import math
 import torch
-from ldm.modules.diffusionmodules.openaimodel import AttentionBlock
 
 import os
 from inspect import isfunction
