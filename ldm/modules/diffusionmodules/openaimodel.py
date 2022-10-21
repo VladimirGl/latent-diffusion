@@ -20,6 +20,21 @@ from ldm.modules.diffusionmodules.util import (
 from ldm.modules.attention import SpatialTransformer
 
 
+import math
+import torch
+from ldm.modules.diffusionmodules.openaimodel import AttentionBlock
+
+import os
+from inspect import isfunction
+from typing import Any, Optional
+import xformers
+import xformers.ops
+
+import numpy as np
+import torch as th
+import torch.nn as nn
+import torch.nn.functional as F
+
 # dummy replace
 def convert_module_to_f16(x):
     pass
@@ -344,6 +359,38 @@ def count_flops_attn(model, _x, y):
     model.total_ops += th.DoubleTensor([matmul_ops])
 
 
+# class QKVAttentionLegacy(nn.Module):
+#     """
+#     A module which performs QKV attention. Matches legacy QKVAttention + input/ouput heads shaping
+#     """
+
+#     def __init__(self, n_heads):
+#         super().__init__()
+#         self.n_heads = n_heads
+
+#     def forward(self, qkv):
+#         """
+#         Apply QKV attention.
+#         :param qkv: an [N x (H * 3 * C) x T] tensor of Qs, Ks, and Vs.
+#         :return: an [N x (H * C) x T] tensor after attention.
+#         """
+#         bs, width, length = qkv.shape
+#         assert width % (3 * self.n_heads) == 0
+#         ch = width // (3 * self.n_heads)
+#         q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
+#         scale = 1 / math.sqrt(math.sqrt(ch))
+#         weight = th.einsum(
+#             "bct,bcs->bts", q * scale, k * scale
+#         )  # More stable with f16 than dividing afterwards
+#         weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
+#         a = th.einsum("bts,bcs->bct", weight, v)
+#         return a.reshape(bs, -1, length)
+
+#     @staticmethod
+#     def count_flops(model, _x, y):
+#         return count_flops_attn(model, _x, y)
+
+
 class QKVAttentionLegacy(nn.Module):
     """
     A module which performs QKV attention. Matches legacy QKVAttention + input/ouput heads shaping
@@ -352,6 +399,8 @@ class QKVAttentionLegacy(nn.Module):
     def __init__(self, n_heads):
         super().__init__()
         self.n_heads = n_heads
+        self.heads = n_heads
+        self.dim_head = 80
 
     def forward(self, qkv):
         """
@@ -363,13 +412,13 @@ class QKVAttentionLegacy(nn.Module):
         assert width % (3 * self.n_heads) == 0
         ch = width // (3 * self.n_heads)
         q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
-        scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = th.einsum(
-            "bct,bcs->bts", q * scale, k * scale
-        )  # More stable with f16 than dividing afterwards
-        weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = th.einsum("bts,bcs->bct", weight, v)
-        return a.reshape(bs, -1, length)
+
+        q = q.permute(0, 2, 1).contiguous()
+        k = k.permute(0, 2, 1).contiguous()
+        v = v.permute(0, 2, 1).contiguous()
+        out = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=None, op=None)
+        new_out = out.permute(0, 2, 1)
+        return new_out.reshape(bs, -1, length)
 
     @staticmethod
     def count_flops(model, _x, y):
