@@ -125,7 +125,8 @@ def get_cond(mode, selected_path):
 
 
 def visualize_cond_img(path):
-    display(ipyimg(filename=path))
+    pass
+    #display(ipyimg(filename=path))
 
 
 def run(model, selected_path, task, custom_steps, resize_enabled=False, classifier_ckpt=None, global_step=None):
