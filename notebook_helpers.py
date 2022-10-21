@@ -3,9 +3,9 @@ from ldm.util import instantiate_from_config
 import torch
 import os
 # todo ?
-from google.colab import files
-from IPython.display import Image as ipyimg
-import ipywidgets as widgets
+#from google.colab import files
+#from IPython.display import Image as ipyimg
+#import ipywidgets as widgets
 from PIL import Image
 from numpy import asarray
 from einops import rearrange, repeat
